@@ -12,3 +12,4 @@ python-dotenv
 mysqlclient
 PyJWT
 email-validator
+openpyxl

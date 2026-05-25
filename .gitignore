@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.*.local
+env
+
 
 # Python
 __pycache__/
@@ -57,4 +59,5 @@ logs/
 
 # Archivos de migración (opcional - descomenta si no quieres versionar migraciones)
 # migrations/versions/*.py
+
 

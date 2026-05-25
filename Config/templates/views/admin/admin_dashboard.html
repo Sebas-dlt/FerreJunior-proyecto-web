@@ -390,6 +390,10 @@
                                 <i class="fas fa-plus"></i>
                                 Nuevo Producto
                             </button>
+                            <button class="action-btn primary" onclick="openImportProductsModal()">
+                                <i class="fas fa-file-excel"></i>
+                                Importar Excel
+                            </button>
                             <button class="action-btn secondary" onclick="showLowStock()">
                                 <i class="fas fa-exclamation-triangle"></i>
                                 Ver Stock Bajo
@@ -1124,6 +1128,58 @@
         </div>
     </div>
 
+    <div id="importProductsModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 640px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-file-excel"></i> Importar Productos desde Excel</h2>
+                <span class="modal-close" onclick="closeModal('importProductsModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info" style="margin-bottom: 16px;">
+                    <i class="fas fa-info-circle"></i>
+                    Sube un archivo <strong>.xlsx</strong> con las columnas:
+                    <code>name, sku, price, stock_quantity, min_stock_level, category, brand, description</code>.
+                    Los campos <strong>name</strong>, <strong>sku</strong> y <strong>price</strong> son obligatorios.
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <a href="/admin/products/import-template" class="btn btn-outline-primary">
+                        <i class="fas fa-download"></i> Descargar plantilla
+                    </a>
+                </div>
+
+                <form id="importProductsForm" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="importProductsFile">Archivo Excel (.xlsx) *</label>
+                        <input type="file" id="importProductsFile" name="file"
+                               accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                               required class="form-control">
+                    </div>
+
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="importProductsUpdateExisting" name="update_existing" value="true">
+                            <span>Actualizar productos existentes (mismo SKU)</span>
+                        </label>
+                        <small class="form-text text-muted">
+                            Si está desactivado, las filas con un SKU ya existente serán omitidas.
+                        </small>
+                    </div>
+
+                    <div id="importProductsResult" style="display: none; margin-top: 16px;"></div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('importProductsModal')">Cerrar</button>
+                        <button type="submit" class="btn btn-primary" id="importProductsSubmitBtn">
+                            <i class="fas fa-upload"></i>
+                            <span id="importProductsSubmitText">Importar productos</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div id="categoryModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
@@ -1331,7 +1387,7 @@
     <script src="{{ url_for('static', filename='vendor/jquery/jquery.min.js') }}"></script>
     <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
     
-    <script src="{{ url_for('static', filename='js/admin_dashboard.js') }}?v=6"></script>
+    <script src="{{ url_for('static', filename='js/admin_dashboard.js') }}?v=7"></script>
     
     <!-- App JS (helpers like formatCOP) -->
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>

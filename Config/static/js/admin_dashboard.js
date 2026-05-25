@@ -661,6 +661,11 @@ document.addEventListener('DOMContentLoaded', function() {
         productForm.addEventListener('submit', submitProductForm);
     }
 
+    const importProductsForm = document.getElementById('importProductsForm');
+    if (importProductsForm) {
+        importProductsForm.addEventListener('submit', submitImportProductsForm);
+    }
+
     const categoryFormElement = document.getElementById('categoryForm');
     if (categoryFormElement) {
         categoryFormElement.addEventListener('submit', submitCategoryForm);
@@ -801,6 +806,113 @@ function submitProductForm(event) {
     });
 }
 
+function openImportProductsModal() {
+    const modal = document.getElementById('importProductsModal');
+    const form = document.getElementById('importProductsForm');
+    const result = document.getElementById('importProductsResult');
+    if (form) form.reset();
+    if (result) {
+        result.style.display = 'none';
+        result.innerHTML = '';
+    }
+    if (modal) modal.style.display = 'flex';
+}
+
+function submitImportProductsForm(event) {
+    event.preventDefault();
+
+    const fileInput = document.getElementById('importProductsFile');
+    const updateExisting = document.getElementById('importProductsUpdateExisting');
+    const submitBtn = document.getElementById('importProductsSubmitBtn');
+    const submitText = document.getElementById('importProductsSubmitText');
+    const resultBox = document.getElementById('importProductsResult');
+
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        alert('Selecciona un archivo Excel (.xlsx).');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('update_existing', updateExisting && updateExisting.checked ? 'true' : 'false');
+
+    const originalText = submitText ? submitText.textContent : '';
+    if (submitBtn) submitBtn.disabled = true;
+    if (submitText) submitText.textContent = 'Importando...';
+    if (resultBox) {
+        resultBox.style.display = 'block';
+        resultBox.innerHTML = '<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Procesando archivo...</div>';
+    }
+
+    fetch('/admin/products/import', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json().then(data => ({ ok: response.ok, data })))
+    .then(({ ok, data }) => {
+        if (!ok || !data.success) {
+            const message = (data && data.error) ? data.error : 'Error al importar productos.';
+            if (resultBox) {
+                resultBox.innerHTML = `<div class="alert alert-danger"><i class="fas fa-times-circle"></i> ${message}</div>`;
+            }
+            return;
+        }
+
+        let html = `
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle"></i> ${data.message || 'Importación completada.'}
+            </div>
+            <ul style="margin: 8px 0 0 18px;">
+                <li><strong>Creados:</strong> ${data.created}</li>
+                <li><strong>Actualizados:</strong> ${data.updated}</li>
+                <li><strong>Omitidos:</strong> ${data.skipped}</li>
+                <li><strong>Total procesado:</strong> ${data.total_processed}</li>
+            </ul>
+        `;
+
+        if (data.errors && data.errors.length > 0) {
+            html += `
+                <div class="alert alert-warning" style="margin-top: 12px;">
+                    <strong><i class="fas fa-exclamation-triangle"></i> Avisos (${data.errors.length}${data.errors_truncated ? '+' : ''}):</strong>
+                    <ul style="margin: 8px 0 0 18px; max-height: 200px; overflow-y: auto;">
+                        ${data.errors.map(e => `<li>${escapeHtml(e)}</li>`).join('')}
+                    </ul>
+                    ${data.errors_truncated ? '<small class="text-muted">Se muestran solo los primeros avisos.</small>' : ''}
+                </div>
+            `;
+        }
+
+        if (resultBox) resultBox.innerHTML = html;
+
+        if (document.getElementById('section-products').style.display !== 'none') {
+            loadProducts();
+        }
+        if (typeof updateDashboardStats === 'function') {
+            updateDashboardStats();
+        }
+    })
+    .catch(error => {
+        console.error('Error importing products:', error);
+        if (resultBox) {
+            resultBox.innerHTML = `<div class="alert alert-danger"><i class="fas fa-times-circle"></i> Error de red: ${escapeHtml(error.message || String(error))}</div>`;
+        }
+    })
+    .finally(() => {
+        if (submitBtn) submitBtn.disabled = false;
+        if (submitText) submitText.textContent = originalText || 'Importar productos';
+    });
+}
+
+function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 function loadProducts() {
     const content = document.getElementById('section-products');
     // Find the content area within the products section
@@ -850,6 +962,10 @@ function renderProductsList(data) {
                 <button class="action-btn primary" onclick="openProductModal()">
                     <i class="fas fa-plus"></i>
                     Nuevo Producto
+                </button>
+                <button class="action-btn primary" onclick="openImportProductsModal()">
+                    <i class="fas fa-file-excel"></i>
+                    Importar Excel
                 </button>
                 <button class="action-btn secondary" onclick="showLowStock()">
                     <i class="fas fa-exclamation-triangle"></i>

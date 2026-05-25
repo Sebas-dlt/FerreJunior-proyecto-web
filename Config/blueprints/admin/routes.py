@@ -9,6 +9,11 @@ import csv
 import io
 from datetime import datetime
 
+EXCEL_TEMPLATE_HEADERS = [
+    'name', 'sku', 'price', 'stock_quantity',
+    'min_stock_level', 'category', 'brand', 'description'
+]
+
 @admin_bp.route("/admin")
 @admin_required
 def admin_dashboard():
@@ -856,8 +861,8 @@ def export_products():
         writer = csv.writer(output)
         
         # Escribir encabezados
-        writer.writerow(['ID', 'Nombre', 'SKU', 'DescripciÃ³n', 'Precio (COP)', 'Stock', 'CategorÃ­a', 'Estado', 'Fecha CreaciÃ³n'])
-        
+        writer.writerow(['ID', 'Nombre', 'SKU', 'Descripción', 'Precio (COP)', 'Stock', 'Categoría', 'Estado', 'Fecha Creación'])
+
         # Escribir datos de productos
         for product in products:
             writer.writerow([
@@ -867,16 +872,16 @@ def export_products():
                 product.description or '',
                 int(round(product.price)) if product.price else 0,
                 product.stock_quantity or 0,
-                product.category.name if product.category else 'Sin categorÃ­a',
-                'Activo' if product.is_active else 'Inactivo',
+                product.category.name if product.category else 'Sin categoría',
+                'Activo' if product.active else 'Inactivo',
                 product.created_at.strftime('%Y-%m-%d %H:%M:%S') if product.created_at else ''
             ])
-        
-        # Preparar archivo para descarga
+
+        # Preparar archivo para descarga (con BOM para Excel)
         output.seek(0)
         return send_file(
-            io.BytesIO(output.getvalue().encode('utf-8')),
-            mimetype='text/csv',
+            io.BytesIO('﻿'.encode('utf-8') + output.getvalue().encode('utf-8')),
+            mimetype='text/csv; charset=utf-8',
             as_attachment=True,
             download_name=f'productos_ferrejunior_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
         )
@@ -884,6 +889,263 @@ def export_products():
     except Exception as e:
         print(f"Error en export_products: {e}")
         return jsonify({'error': str(e), 'success': False}), 500
+
+@admin_bp.route("/admin/products/import-template", methods=["GET"])
+@login_required
+@admin_required
+def products_import_template():
+    """Descargar plantilla Excel (.xlsx) para importar productos."""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.comments import Comment
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Productos"
+
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="1890FF", end_color="1890FF", fill_type="solid")
+        center = Alignment(horizontal="center", vertical="center")
+
+        comments = {
+            'name': 'Obligatorio. Nombre del producto.',
+            'sku': 'Obligatorio. Código único; si ya existe se omite (o se actualiza si activa "actualizar existentes").',
+            'price': 'Obligatorio. Precio en COP (número, sin separadores).',
+            'stock_quantity': 'Opcional. Cantidad inicial en inventario. Por defecto 0.',
+            'min_stock_level': 'Opcional. Stock mínimo para alerta. Por defecto 10.',
+            'category': 'Opcional. Nombre exacto de una categoría existente.',
+            'brand': 'Opcional. Marca del producto.',
+            'description': 'Opcional. Descripción detallada.'
+        }
+
+        for col_idx, header in enumerate(EXCEL_TEMPLATE_HEADERS, start=1):
+            cell = ws.cell(row=1, column=col_idx, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = center
+            if header in comments:
+                cell.comment = Comment(comments[header], "FerreJunior")
+            ws.column_dimensions[cell.column_letter].width = max(16, len(header) + 4)
+
+        sample_rows = [
+            ['Martillo de Carpintero 16oz', 'HRR-MTL-001', 25000, 50, 10, 'Herramientas Manuales', 'Stanley', 'Martillo de uña, mango ergonómico.'],
+            ['Taladro Inalámbrico 18V', 'HRR-TLD-002', 320000, 15, 5, 'Herramientas Eléctricas', 'Bosch', 'Incluye batería y cargador.'],
+        ]
+        for row in sample_rows:
+            ws.append(row)
+
+        ws.freeze_panes = "A2"
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        return send_file(
+            buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='plantilla_productos_ferrejunior.xlsx'
+        )
+
+    except ImportError:
+        return jsonify({'error': 'La librería openpyxl no está instalada en el servidor.', 'success': False}), 500
+    except Exception as e:
+        print(f"Error en products_import_template: {e}")
+        return jsonify({'error': str(e), 'success': False}), 500
+
+
+@admin_bp.route("/admin/products/import", methods=["POST"])
+@login_required
+@admin_required
+def products_import():
+    """Importar productos desde un archivo Excel (.xlsx)."""
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        return jsonify({'error': 'La librería openpyxl no está instalada en el servidor.', 'success': False}), 500
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'No se recibió ningún archivo.', 'success': False}), 400
+
+    file = request.files['file']
+    if not file or file.filename == '':
+        return jsonify({'error': 'Selecciona un archivo Excel (.xlsx).', 'success': False}), 400
+
+    filename = file.filename.lower()
+    if not (filename.endswith('.xlsx') or filename.endswith('.xlsm')):
+        return jsonify({'error': 'Formato no soportado. Sube un archivo .xlsx.', 'success': False}), 400
+
+    update_existing = request.form.get('update_existing', 'false').lower() in ('true', '1', 'on', 'yes')
+
+    try:
+        wb = load_workbook(file, data_only=True, read_only=True)
+        ws = wb.active
+
+        rows = ws.iter_rows(values_only=True)
+        try:
+            header_row = next(rows)
+        except StopIteration:
+            return jsonify({'error': 'El archivo está vacío.', 'success': False}), 400
+
+        header_map = {}
+        for idx, cell in enumerate(header_row):
+            if cell is None:
+                continue
+            key = str(cell).strip().lower()
+            if key in EXCEL_TEMPLATE_HEADERS:
+                header_map[key] = idx
+
+        required = ['name', 'sku', 'price']
+        missing = [r for r in required if r not in header_map]
+        if missing:
+            return jsonify({
+                'error': f'Faltan columnas obligatorias en el Excel: {", ".join(missing)}.',
+                'success': False
+            }), 400
+
+        categories_by_name = {
+            c.name.strip().lower(): c.id
+            for c in Category.query.filter_by(active=True).all()
+        }
+
+        created = 0
+        updated = 0
+        skipped = 0
+        errors = []
+        seen_skus_in_file = set()
+
+        def cell_value(row, key):
+            idx = header_map.get(key)
+            if idx is None or idx >= len(row):
+                return None
+            value = row[idx]
+            if isinstance(value, str):
+                value = value.strip()
+                if value == '':
+                    return None
+            return value
+
+        for row_num, row in enumerate(rows, start=2):
+            if row is None or all(v is None or (isinstance(v, str) and v.strip() == '') for v in row):
+                continue
+
+            try:
+                name = cell_value(row, 'name')
+                sku = cell_value(row, 'sku')
+                price = cell_value(row, 'price')
+
+                if not name or not sku or price is None:
+                    errors.append(f'Fila {row_num}: faltan campos obligatorios (name, sku, price).')
+                    skipped += 1
+                    continue
+
+                sku = str(sku).strip()
+                if sku.lower() in seen_skus_in_file:
+                    errors.append(f'Fila {row_num}: SKU "{sku}" duplicado dentro del archivo.')
+                    skipped += 1
+                    continue
+                seen_skus_in_file.add(sku.lower())
+
+                try:
+                    price_val = float(price)
+                except (TypeError, ValueError):
+                    errors.append(f'Fila {row_num}: precio inválido ("{price}").')
+                    skipped += 1
+                    continue
+                if price_val < 0:
+                    errors.append(f'Fila {row_num}: el precio no puede ser negativo.')
+                    skipped += 1
+                    continue
+
+                def to_int(val, default):
+                    if val is None or val == '':
+                        return default
+                    try:
+                        return int(float(val))
+                    except (TypeError, ValueError):
+                        return None
+
+                stock_quantity = to_int(cell_value(row, 'stock_quantity'), 0)
+                if stock_quantity is None or stock_quantity < 0:
+                    errors.append(f'Fila {row_num}: stock_quantity inválido.')
+                    skipped += 1
+                    continue
+
+                min_stock_level = to_int(cell_value(row, 'min_stock_level'), 10)
+                if min_stock_level is None or min_stock_level < 0:
+                    errors.append(f'Fila {row_num}: min_stock_level inválido.')
+                    skipped += 1
+                    continue
+
+                category_id = None
+                category_name = cell_value(row, 'category')
+                if category_name:
+                    category_id = categories_by_name.get(str(category_name).strip().lower())
+                    if category_id is None:
+                        errors.append(f'Fila {row_num}: categoría "{category_name}" no existe (producto creado sin categoría).')
+
+                brand = cell_value(row, 'brand') or ''
+                description = cell_value(row, 'description') or ''
+
+                existing = Product.query.filter_by(sku=sku).first()
+
+                if existing:
+                    if not update_existing:
+                        errors.append(f'Fila {row_num}: SKU "{sku}" ya existe (omitido).')
+                        skipped += 1
+                        continue
+                    existing.name = str(name).strip()
+                    existing.price = price_val
+                    existing.stock_quantity = stock_quantity
+                    existing.min_stock_level = min_stock_level
+                    if category_id is not None:
+                        existing.category_id = category_id
+                    existing.brand = str(brand).strip()
+                    existing.description = str(description).strip()
+                    existing.updated_at = datetime.utcnow()
+                    updated += 1
+                else:
+                    product = Product(
+                        name=str(name).strip(),
+                        description=str(description).strip(),
+                        sku=sku,
+                        price=price_val,
+                        stock_quantity=stock_quantity,
+                        min_stock_level=min_stock_level,
+                        category_id=category_id,
+                        brand=str(brand).strip(),
+                        active=True
+                    )
+                    db.session.add(product)
+                    created += 1
+
+            except Exception as row_error:
+                errors.append(f'Fila {row_num}: error inesperado ({row_error}).')
+                skipped += 1
+                continue
+
+        db.session.commit()
+
+        MAX_ERRORS_RETURNED = 50
+        truncated = len(errors) > MAX_ERRORS_RETURNED
+
+        return jsonify({
+            'success': True,
+            'created': created,
+            'updated': updated,
+            'skipped': skipped,
+            'total_processed': created + updated + skipped,
+            'errors': errors[:MAX_ERRORS_RETURNED],
+            'errors_truncated': truncated,
+            'message': f'Importación finalizada: {created} creados, {updated} actualizados, {skipped} omitidos.'
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error en products_import: {e}")
+        return jsonify({'error': f'Error al procesar el archivo: {e}', 'success': False}), 500
+
 
 @admin_bp.route("/admin/users-data", methods=["GET"])
 @login_required
