@@ -844,8 +844,11 @@ function submitImportProductsForm(event) {
         resultBox.innerHTML = '<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Procesando archivo...</div>';
     }
 
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
     fetch('/admin/products/import', {
         method: 'POST',
+        headers: csrfToken ? { 'X-CSRFToken': csrfToken } : {},
         body: formData
     })
     .then(response => response.json().then(data => ({ ok: response.ok, data })))
