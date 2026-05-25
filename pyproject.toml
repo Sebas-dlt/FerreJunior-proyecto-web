@@ -1,0 +1,21 @@
+[project]
+name = "ferrejunior"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "flask",
+    "flask-sqlalchemy",
+    "flask-marshmallow",
+    "marshmallow-sqlalchemy",
+    "werkzeug",
+    "flask-login",
+    "pymysql",
+    "psycopg2-binary",
+    "flask-wtf",
+    "requests",
+    "mysql-connector-python",
+    "python-dotenv",
+    "pyjwt",
+    "email-validator",
+    "openpyxl",
+]
