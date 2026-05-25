@@ -5,11 +5,11 @@ marshmallow-sqlalchemy
 werkzeug
 Flask-Login
 pymysql
+psycopg2-binary
 Flask-WTF
 requests
 mysql-connector-python
 python-dotenv
-mysqlclient
 PyJWT
 email-validator
 openpyxl

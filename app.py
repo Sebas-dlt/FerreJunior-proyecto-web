@@ -417,7 +417,11 @@ def init_db():
                         print(f"Error al crear tareas: {e}")
                         db.session.rollback()
 
-if __name__ == "__main__":
-    # Inicializar base de datos al arrancar
+# Inicializar DB al importar el módulo (Vercel, gunicorn, PythonAnywhere, etc.)
+try:
     init_db()
+except Exception as _e:
+    print(f"Warning: DB initialization failed: {_e}")
+
+if __name__ == "__main__":
     app.run(debug=True, port=5000, host='0.0.0.0')
